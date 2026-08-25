@@ -1,27 +1,29 @@
 package sortedmap
 
-import "container/list"
+type item[K comparable, V any] struct {
+	key   K
+	value V
+}
 
 type Iterator[K comparable, V any] struct {
-	next    *list.Element
-	current *list.Element
+	items   []item[K, V]
+	current int
 }
 
 func (i *Iterator[K, V]) Next() bool {
-	if i.next == nil {
+	if i.current >= len(i.items) {
 		return false
 	}
-	i.current = i.next
-	i.next = i.next.Next()
+	i.current++
 	return true
 }
 
 func (i *Iterator[K, V]) Item() (K, V) {
-	if i.current == nil {
+	if i.current == 0 {
 		panic("current is nil")
 	}
-	p := i.current.Value.(*pair[K, V])
-	return p.key, p.value
+	item := i.items[i.current-1]
+	return item.key, item.value
 }
 
 func (i *Iterator[K, V]) Key() K {

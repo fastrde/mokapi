@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -13,10 +14,17 @@ import (
 // LinkedHashMap defines the iteration ordering by the order
 // in which keys were inserted into the map
 type LinkedHashMap[K comparable, V any] struct {
+	mu sync.RWMutex
+
 	KeyNormalizer func(K) K
 
 	pairs map[interface{}]*pair[K, V]
 	list  *list.List
+}
+
+type Item[K comparable, V any] struct {
+	Key   K
+	Value V
 }
 
 type pair[K comparable, V any] struct {
@@ -30,6 +38,9 @@ func NewLinkedHashMap() *LinkedHashMap[string, interface{}] {
 }
 
 func (m *LinkedHashMap[K, V]) Set(key K, value V) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	nk := key
 	if m.KeyNormalizer != nil {
 		nk = m.KeyNormalizer(key)
@@ -49,10 +60,16 @@ func (m *LinkedHashMap[K, V]) Len() int {
 	if m == nil {
 		return 0
 	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	return len(m.pairs)
 }
 
 func (m *LinkedHashMap[K, V]) Get(key K) (V, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.pairs != nil {
 		nk := key
 		if m.KeyNormalizer != nil {
@@ -67,6 +84,9 @@ func (m *LinkedHashMap[K, V]) Get(key K) (V, bool) {
 }
 
 func (m *LinkedHashMap[K, V]) Del(key K) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.pairs == nil {
 		return
 	}
@@ -92,10 +112,23 @@ func (m *LinkedHashMap[K, V]) Lookup(key K) V {
 }
 
 func (m *LinkedHashMap[K, V]) Iter() *Iterator[K, V] {
-	if m == nil || m.list == nil {
+	if m == nil {
 		return &Iterator[K, V]{}
 	}
-	return &Iterator[K, V]{next: m.list.Front()}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	items := make([]item[K, V], 0, len(m.pairs))
+	for e := m.list.Front(); e != nil; e = e.Next() {
+		p := e.Value.(*pair[K, V])
+		items = append(items, item[K, V]{
+			key:   p.key,
+			value: p.value,
+		})
+	}
+
+	return &Iterator[K, V]{items: items}
 }
 
 func (m *LinkedHashMap[K, V]) Keys() []K {
